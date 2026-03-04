@@ -1,0 +1,591 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Guess My Number</title>
+    <script src="/socket.io/socket.io.js"></script>
+    <style>
+      * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+      body {
+        min-height: 100vh;
+        background: linear-gradient(135deg, #0f0c29, #302b63, #24243e);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-family: Georgia, serif;
+        color: #fff;
+        padding: 20px;
+      }
+      .container {
+        width: 100%;
+        max-width: 480px;
+      }
+      .screen {
+        display: none;
+        text-align: center;
+        animation: fadeIn 0.5s ease;
+      }
+      .screen.active {
+        display: block;
+      }
+      h1 {
+        font-size: 40px;
+        margin-bottom: 8px;
+        text-shadow: 0 0 40px rgba(167, 139, 250, 0.8);
+      }
+      h2 {
+        font-size: 26px;
+        margin-bottom: 16px;
+      }
+      p {
+        color: rgba(255, 255, 255, 0.5);
+        margin-bottom: 20px;
+        font-size: 14px;
+      }
+      input {
+        width: 100%;
+        background: rgba(255, 255, 255, 0.05);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        border-radius: 12px;
+        padding: 14px 16px;
+        color: #fff;
+        font-size: 16px;
+        outline: none;
+        margin-bottom: 12px;
+      }
+      button {
+        width: 100%;
+        background: #a78bfa;
+        color: #fff;
+        border: none;
+        border-radius: 14px;
+        padding: 16px;
+        font-size: 17px;
+        font-weight: bold;
+        cursor: pointer;
+        margin-bottom: 10px;
+        transition: opacity 0.2s;
+      }
+      button:hover {
+        opacity: 0.85;
+      }
+      button.pink {
+        background: #f472b6;
+      }
+      button.green {
+        background: #34d399;
+      }
+      .room-code {
+        font-size: 48px;
+        font-weight: bold;
+        letter-spacing: 8px;
+        color: #a78bfa;
+        margin: 16px 0;
+      }
+      .badge {
+        display: inline-block;
+        background: rgba(167, 139, 250, 0.15);
+        border: 1px solid #a78bfa;
+        border-radius: 50px;
+        padding: 6px 20px;
+        color: #a78bfa;
+        font-size: 13px;
+        margin-bottom: 16px;
+      }
+      .result-banner {
+        border-radius: 12px;
+        padding: 12px 16px;
+        margin-bottom: 16px;
+        font-size: 16px;
+        font-weight: bold;
+      }
+      .higher {
+        background: rgba(52, 211, 153, 0.1);
+        border: 1px solid #34d399;
+        color: #34d399;
+      }
+      .lower {
+        background: rgba(251, 191, 36, 0.1);
+        border: 1px solid #fbbf24;
+        color: #fbbf24;
+      }
+      .history {
+        background: rgba(255, 255, 255, 0.03);
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        border-radius: 16px;
+        padding: 16px;
+        max-height: 180px;
+        overflow-y: auto;
+        text-align: left;
+        margin-top: 16px;
+      }
+      .history-item {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 8px 0;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+        font-size: 13px;
+      }
+      .history-item.mine {
+        background: rgba(167, 139, 250, 0.05);
+        border-radius: 8px;
+        padding: 8px;
+        margin-bottom: 2px;
+      }
+      .history-item.theirs {
+        opacity: 0.6;
+      }
+      .reveal-grid {
+        display: flex;
+        gap: 16px;
+        margin-bottom: 24px;
+      }
+      .reveal-card {
+        flex: 1;
+        background: rgba(255, 255, 255, 0.04);
+        border-radius: 16px;
+        padding: 16px;
+      }
+      .reveal-card .number {
+        font-size: 40px;
+        font-weight: bold;
+      }
+      .error {
+        color: #f87171;
+        font-size: 13px;
+        margin-bottom: 8px;
+      }
+      .reconnect-banner {
+        background: rgba(251, 191, 36, 0.1);
+        border: 1px solid #fbbf24;
+        border-radius: 12px;
+        padding: 12px 16px;
+        margin-bottom: 16px;
+        color: #fbbf24;
+        font-size: 14px;
+        display: none;
+      }
+      @keyframes fadeIn {
+        from {
+          opacity: 0;
+          transform: translateY(16px);
+        }
+        to {
+          opacity: 1;
+          transform: translateY(0);
+        }
+      }
+      @keyframes pulse {
+        0%,
+        100% {
+          opacity: 1;
+        }
+        50% {
+          opacity: 0.4;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <!-- HOME -->
+      <div class="screen active" id="screen-home">
+        <div style="font-size: 60px; margin-bottom: 12px">🔢</div>
+        <h1>Guess My Number</h1>
+        <p>A two-player number duel</p>
+        <input id="home-name" placeholder="Your name" />
+        <button onclick="createRoom()">🎮 Create Game</button>
+        <button class="pink" onclick="showJoin()">🔗 Join Game</button>
+      </div>
+
+      <!-- JOIN -->
+      <div class="screen" id="screen-join">
+        <h2>Join a Game</h2>
+        <p>Enter the room code your friend shared</p>
+        <input id="join-name" placeholder="Your name" />
+        <input
+          id="join-code"
+          placeholder="Room code"
+          style="
+            text-transform: uppercase;
+            letter-spacing: 4px;
+            text-align: center;
+          "
+        />
+        <div class="error" id="join-error"></div>
+        <button onclick="joinRoom()">Join →</button>
+        <button class="pink" onclick="showScreen('screen-home')">← Back</button>
+      </div>
+
+      <!-- WAITING -->
+      <div class="screen" id="screen-waiting">
+        <div style="font-size: 48px; margin-bottom: 12px">⏳</div>
+        <h2>Waiting for friend...</h2>
+        <p>Share this code with your friend</p>
+        <div class="room-code" id="display-code"></div>
+        <p>They click "Join Game" and enter this code</p>
+      </div>
+
+      <!-- ENTER NUMBER -->
+      <div class="screen" id="screen-number">
+        <div style="font-size: 48px; margin-bottom: 12px">🤫</div>
+        <h2>Pick Your Secret Number</h2>
+        <p>Choose a number between 1 and 100. Your opponent won't see it!</p>
+        <input
+          type="number"
+          id="secret-number"
+          placeholder="1 – 100"
+          min="1"
+          max="100"
+        />
+        <div class="error" id="number-error"></div>
+        <button onclick="lockNumber()">🔒 Lock It In</button>
+      </div>
+
+      <!-- WAITING FOR OTHER PLAYER NUMBER -->
+      <div class="screen" id="screen-waiting-number">
+        <div style="font-size: 48px; margin-bottom: 12px">🔒</div>
+        <h2>Number Locked!</h2>
+        <p>Waiting for your opponent to pick their number...</p>
+      </div>
+
+      <!-- PLAYING -->
+      <div class="screen" id="screen-playing">
+        <div class="reconnect-banner" id="reconnect-banner"></div>
+        <div class="badge" id="turn-badge">Your Turn</div>
+        <h2 id="turn-title">Guess their number!</h2>
+        <p id="range-text">Range: 1 – 100</p>
+        <div
+          class="result-banner"
+          id="result-banner"
+          style="display: none"
+        ></div>
+        <div style="display: flex; gap: 10px; margin-bottom: 16px">
+          <input
+            type="number"
+            id="guess-input"
+            placeholder="Enter your guess..."
+            min="1"
+            max="100"
+            style="margin: 0"
+          />
+          <button
+            onclick="makeGuess()"
+            style="width: auto; padding: 0 20px; margin: 0"
+          >
+            →
+          </button>
+        </div>
+        <div class="history" id="history"></div>
+      </div>
+
+      <!-- WIN -->
+      <div class="screen" id="screen-win">
+        <div style="font-size: 60px; margin-bottom: 12px">🏆</div>
+        <h2 id="win-title">You Win!</h2>
+        <p id="win-subtitle"></p>
+        <div class="reveal-grid">
+          <div class="reveal-card">
+            <div
+              style="color: #a78bfa; font-size: 12px; margin-bottom: 4px"
+              id="p1-label"
+            >
+              Player 1
+            </div>
+            <div class="number" id="p1-number">?</div>
+          </div>
+          <div class="reveal-card">
+            <div
+              style="color: #f472b6; font-size: 12px; margin-bottom: 4px"
+              id="p2-label"
+            >
+              Player 2
+            </div>
+            <div class="number" id="p2-number">?</div>
+          </div>
+        </div>
+        <button onclick="playAgain()">Play Again</button>
+      </div>
+
+      <!-- RECONNECTING -->
+      <div class="screen" id="screen-reconnecting">
+        <div
+          style="
+            font-size: 48px;
+            margin-bottom: 12px;
+            animation: pulse 1.5s infinite;
+          "
+        >
+          📡
+        </div>
+        <h2>Reconnecting...</h2>
+        <p>Please wait while we restore your connection.</p>
+      </div>
+
+      <!-- DISCONNECTED -->
+      <div class="screen" id="screen-disconnected">
+        <div style="font-size: 60px; margin-bottom: 12px">😞</div>
+        <h2>Opponent Left</h2>
+        <p>Your opponent disconnected from the game.</p>
+        <button onclick="location.reload()">Back to Home</button>
+      </div>
+    </div>
+
+    <script>
+      const socket = io({
+        reconnection: true,
+        reconnectionAttempts: 10,
+        reconnectionDelay: 1000,
+        reconnectionDelayMax: 5000,
+      });
+
+      let myName = "";
+      let roomCode = "";
+      let myNumber = null;
+      let isMyTurn = false;
+      let p1Name = "";
+      let p2Name = "";
+      let guessHistory = [];
+      let myRange = [1, 100];
+
+      function showScreen(id) {
+        document
+          .querySelectorAll(".screen")
+          .forEach((s) => s.classList.remove("active"));
+        document.getElementById(id).classList.add("active");
+      }
+
+      function showJoin() {
+        showScreen("screen-join");
+      }
+
+      function createRoom() {
+        myName = document.getElementById("home-name").value.trim();
+        if (!myName) return alert("Please enter your name!");
+        socket.emit("createRoom", myName);
+      }
+
+      function joinRoom() {
+        myName = document.getElementById("join-name").value.trim();
+        const code = document
+          .getElementById("join-code")
+          .value.trim()
+          .toUpperCase();
+        if (!myName || !code) return alert("Please fill in all fields!");
+        socket.emit("joinRoom", { roomCode: code, playerName: myName });
+      }
+
+      function lockNumber() {
+        const num = parseInt(document.getElementById("secret-number").value);
+        if (!num || num < 1 || num > 100) {
+          document.getElementById("number-error").textContent =
+            "Please enter a number between 1 and 100!";
+          return;
+        }
+        myNumber = num;
+        socket.emit("setNumber", { roomCode, number: num });
+        showScreen("screen-waiting-number");
+      }
+
+      function makeGuess() {
+        if (!isMyTurn) return;
+        const guess = parseInt(document.getElementById("guess-input").value);
+        if (!guess || guess < 1 || guess > 100) return;
+        socket.emit("makeGuess", { roomCode, guess });
+        document.getElementById("guess-input").value = "";
+      }
+
+      function playAgain() {
+        socket.emit("playAgain", roomCode);
+      }
+
+      document.addEventListener("keydown", (e) => {
+        if (e.key === "Enter") makeGuess();
+      });
+
+      // Reconnection handling
+      socket.on("disconnect", () => {
+        if (roomCode && myName) {
+          showScreen("screen-reconnecting");
+        }
+      });
+
+      socket.on("reconnect", () => {
+        if (roomCode && myName) {
+          setTimeout(() => {
+            socket.emit("rejoin", { roomCode, playerName: myName });
+          }, 500);
+        }
+      });
+
+      socket.on(
+        "rejoinSuccess",
+        ({ p1, p2, currentTurnIndex, myNumber: num }) => {
+          p1Name = p1;
+          p2Name = p2;
+          if (num !== null) myNumber = num;
+          isMyTurn =
+            (currentTurnIndex === 0 && myName === p1) ||
+            (currentTurnIndex === 1 && myName === p2);
+          updateTurnUI();
+          showScreen("screen-playing");
+        },
+      );
+
+      socket.on("rejoinFailed", () => {
+        showScreen("screen-disconnected");
+      });
+
+      socket.on("opponentDisconnected", (name) => {
+        const banner = document.getElementById("reconnect-banner");
+        banner.style.display = "block";
+        banner.textContent = `⏳ ${name} disconnected — waiting 30s for them to return...`;
+      });
+
+      socket.on("opponentReconnected", () => {
+        document.getElementById("reconnect-banner").style.display = "none";
+      });
+
+      socket.on("roomCreated", (code) => {
+        roomCode = code;
+        document.getElementById("display-code").textContent = code;
+        showScreen("screen-waiting");
+      });
+
+      socket.on("joinError", (msg) => {
+        document.getElementById("join-error").textContent = msg;
+      });
+
+      socket.on("roomJoined", (code) => {
+        roomCode = code;
+      });
+
+      socket.on("gameReady", ({ p1, p2 }) => {
+        p1Name = p1;
+        p2Name = p2;
+        showScreen("screen-number");
+      });
+
+      socket.on("bothReady", (firstPlayerName) => {
+        isMyTurn = myName === firstPlayerName;
+        updateTurnUI();
+        showScreen("screen-playing");
+      });
+
+      socket.on("guessResult", (data) => {
+        const { guesserName, targetName, guess, result, nextTurn } = data;
+        const isMe = guesserName === myName;
+
+        if (result === "correct") {
+          document.getElementById("win-title").textContent = isMe
+            ? "🏆 You Win!"
+            : "😔 You Lost!";
+          document.getElementById("win-subtitle").textContent =
+            `${guesserName} guessed ${targetName}'s number!`;
+          document.getElementById("p1-label").textContent =
+            data.p1Name || p1Name;
+          document.getElementById("p2-label").textContent =
+            data.p2Name || p2Name;
+          document.getElementById("p1-number").textContent =
+            data.p1Number || "?";
+          document.getElementById("p2-number").textContent =
+            data.p2Number || "?";
+          showScreen("screen-win");
+          return;
+        }
+
+        if (isMe) {
+          if (result === "higher") myRange[0] = Math.max(myRange[0], guess + 1);
+          else myRange[1] = Math.min(myRange[1], guess - 1);
+          document.getElementById("range-text").textContent =
+            `Range: ${myRange[0]} – ${myRange[1]}`;
+        }
+
+        guessHistory.unshift({ guesserName, guess, result, targetName, isMe });
+        updateHistory();
+
+        const banner = document.getElementById("result-banner");
+        banner.style.display = "block";
+        if (isMe) {
+          banner.className = `result-banner ${result}`;
+          banner.textContent =
+            result === "higher"
+              ? `📈 Go HIGHER! (you guessed ${guess})`
+              : `📉 Go LOWER! (you guessed ${guess})`;
+        } else {
+          banner.className = "result-banner";
+          banner.style.background = "rgba(255,255,255,0.05)";
+          banner.style.border = "1px solid rgba(255,255,255,0.1)";
+          banner.style.color = "rgba(255,255,255,0.6)";
+          banner.textContent = `${guesserName} guessed ${guess} — ${result.toUpperCase()}`;
+        }
+
+        isMyTurn = myName === nextTurn;
+        updateTurnUI();
+      });
+
+      socket.on("restartGame", () => {
+        myNumber = null;
+        isMyTurn = false;
+        guessHistory = [];
+        myRange = [1, 100];
+        document.getElementById("result-banner").style.display = "none";
+        document.getElementById("reconnect-banner").style.display = "none";
+        document.getElementById("history").innerHTML = "";
+        document.getElementById("range-text").textContent = "Range: 1 – 100";
+        document.getElementById("secret-number").value = "";
+        document.getElementById("number-error").textContent = "";
+        showScreen("screen-number");
+      });
+
+      socket.on("playerLeft", () => {
+        showScreen("screen-disconnected");
+      });
+
+      function updateTurnUI() {
+        const badge = document.getElementById("turn-badge");
+        const title = document.getElementById("turn-title");
+        const input = document.getElementById("guess-input");
+        if (isMyTurn) {
+          badge.textContent = "🟢 Your Turn";
+          badge.style.color = "#34d399";
+          badge.style.borderColor = "#34d399";
+          badge.style.background = "rgba(52,211,153,0.15)";
+          title.textContent = "Guess your opponent's number!";
+          input.disabled = false;
+        } else {
+          badge.textContent = "⏳ Opponent's Turn";
+          badge.style.color = "#a78bfa";
+          badge.style.borderColor = "#a78bfa";
+          badge.style.background = "rgba(167,139,250,0.15)";
+          title.textContent = "Waiting for opponent...";
+          input.disabled = true;
+        }
+      }
+
+      function updateHistory() {
+        const container = document.getElementById("history");
+        container.innerHTML =
+          '<p style="color:rgba(255,255,255,0.3);font-size:11px;letter-spacing:1px;margin-bottom:8px">GUESS HISTORY</p>';
+        guessHistory.forEach((h) => {
+          const div = document.createElement("div");
+          div.className = `history-item ${h.isMe ? "mine" : "theirs"}`;
+          div.innerHTML = `
+            <span style="color:${h.isMe ? "#a78bfa" : "rgba(255,255,255,0.5)"};font-weight:${h.isMe ? "bold" : "normal"}">
+              ${h.isMe ? "👤 You" : "🎯 " + h.guesserName} guessed <strong style="color:${h.isMe ? "#fff" : "rgba(255,255,255,0.6)"}">${h.guess}</strong>
+            </span>
+            <span style="color:${h.result === "higher" ? "#34d399" : "#fbbf24"};font-weight:bold;font-size:12px">
+              ${h.result === "higher" ? "↑ HIGHER" : "↓ LOWER"}
+            </span>`;
+          container.appendChild(div);
+        });
+      }
+    </script>
+  </body>
+</html>

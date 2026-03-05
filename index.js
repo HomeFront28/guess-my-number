@@ -4,9 +4,9 @@ const socketio = require("socket.io");
 const app = express();
 const server = http.createServer(app);
 
-// 1. Increased timeouts for better stability on free hosting like Render
+// 1. Timeouts for better stability on Render
 const io = socketio(server, {
-  pingTimeout: 120000, // 2 minutes
+  pingTimeout: 120000, 
   pingInterval: 30000,
   transports: ["websocket", "polling"]
 });
@@ -15,7 +15,6 @@ app.use(express.static("public"));
 
 const rooms = {};
 const disconnectTimers = {};
-// 2. Map socket IDs to player info for instant lookup on disconnect
 const socketToPlayer = {}; 
 
 io.on("connection", (socket) => {
@@ -28,12 +27,10 @@ io.on("connection", (socket) => {
       currentTurn: 0,
       ranges: { p1: [1, 100], p2: [1, 100] },
     };
-    
-    // Store session info
     socketToPlayer[socket.id] = { roomCode, playerName };
-    
     socket.join(roomCode);
     socket.emit("roomCreated", roomCode);
+    console.log(`Room ${roomCode} created by ${playerName}`);
   });
 
   socket.on("joinRoom", ({ roomCode, playerName }) => {
@@ -42,12 +39,8 @@ io.on("connection", (socket) => {
       socket.emit("joinError", "Room not found or full");
       return;
     }
-    
     room.players.push({ id: socket.id, name: playerName, number: null });
-    
-    // Store session info
     socketToPlayer[socket.id] = { roomCode, playerName };
-
     socket.join(roomCode);
     socket.emit("roomJoined", roomCode);
     io.to(roomCode).emit("gameReady", {
@@ -58,27 +51,29 @@ io.on("connection", (socket) => {
 
   socket.on("rejoin", ({ roomCode, playerName }) => {
     const room = rooms[roomCode];
+    console.log(`Rejoin request from ${playerName} for room ${roomCode}`);
+
     if (!room) {
+      console.log(`Rejoin failed: Room ${roomCode} no longer exists.`);
       socket.emit("rejoinFailed");
       return;
     }
 
     const playerIndex = room.players.findIndex((p) => p.name === playerName);
     if (playerIndex === -1) {
+      console.log(`Rejoin failed: Player ${playerName} not in room ${roomCode}`);
       socket.emit("rejoinFailed");
       return;
     }
 
-    // Cancel the "delete room" countdown because they're back!
     if (disconnectTimers[roomCode + playerName]) {
       clearTimeout(disconnectTimers[roomCode + playerName]);
       delete disconnectTimers[roomCode + playerName];
+      console.log(`Timer cleared for ${playerName}. They are back!`);
     }
 
-    // Update with new socket ID
     room.players[playerIndex].id = socket.id;
     socketToPlayer[socket.id] = { roomCode, playerName };
-    
     socket.join(roomCode);
     io.to(roomCode).emit("opponentReconnected");
     
@@ -113,27 +108,24 @@ io.on("connection", (socket) => {
     const guesserName = room.players[guesserIndex].name;
     const targetName = room.players[targetIndex].name;
     
-    let result;
     if (guess === targetNumber) {
-      result = "correct";
       io.to(roomCode).emit("guessResult", {
         guesserName,
         targetName,
         guess,
-        result,
+        result: "correct",
         p1Number: room.players[0].number,
         p2Number: room.players[1].number,
         p1Name: room.players[0].name,
         p2Name: room.players[1].name,
       });
     } else {
-      result = guess < targetNumber ? "higher" : "lower";
       room.currentTurn = targetIndex;
       io.to(roomCode).emit("guessResult", {
         guesserName,
         targetName,
         guess,
-        result,
+        result: guess < targetNumber ? "higher" : "lower",
         nextTurn: room.players[targetIndex].name,
       });
     }
@@ -152,24 +144,21 @@ io.on("connection", (socket) => {
     if (!session) return;
 
     const { roomCode, playerName } = session;
-    const room = rooms[roomCode];
+    console.log(`User disconnected: ${playerName} from room ${roomCode}`);
 
-    if (room) {
-      // Notify the other player
+    if (rooms[roomCode]) {
       io.to(roomCode).emit("opponentDisconnected", playerName);
 
-      // Start the 30-second grace period before killing the room
+      // EXTENDED GRACE PERIOD: 5 minutes (300,000ms)
       disconnectTimers[roomCode + playerName] = setTimeout(() => {
         if (rooms[roomCode]) {
           io.to(roomCode).emit("playerLeft");
           delete rooms[roomCode];
-          console.log(`Room ${roomCode} deleted due to inactivity.`);
+          console.log(`Room ${roomCode} deleted due to 5-min inactivity.`);
         }
         delete disconnectTimers[roomCode + playerName];
-      }, 30000);
+      }, 300000); 
     }
-
-    // Clean up our mapping
     delete socketToPlayer[socket.id];
   });
 });

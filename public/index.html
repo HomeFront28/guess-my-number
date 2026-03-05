@@ -194,7 +194,6 @@
   </head>
   <body>
     <div class="container">
-      <!-- HOME -->
       <div class="screen active" id="screen-home">
         <div style="font-size: 60px; margin-bottom: 12px">🔢</div>
         <h1>Guess My Number</h1>
@@ -204,7 +203,6 @@
         <button class="pink" onclick="showJoin()">🔗 Join Game</button>
       </div>
 
-      <!-- JOIN -->
       <div class="screen" id="screen-join">
         <h2>Join a Game</h2>
         <p>Enter the room code your friend shared</p>
@@ -223,7 +221,6 @@
         <button class="pink" onclick="showScreen('screen-home')">← Back</button>
       </div>
 
-      <!-- WAITING -->
       <div class="screen" id="screen-waiting">
         <div style="font-size: 48px; margin-bottom: 12px">⏳</div>
         <h2>Waiting for friend...</h2>
@@ -232,7 +229,6 @@
         <p>They click "Join Game" and enter this code</p>
       </div>
 
-      <!-- ENTER NUMBER -->
       <div class="screen" id="screen-number">
         <div style="font-size: 48px; margin-bottom: 12px">🤫</div>
         <h2>Pick Your Secret Number</h2>
@@ -248,14 +244,12 @@
         <button onclick="lockNumber()">🔒 Lock It In</button>
       </div>
 
-      <!-- WAITING FOR OTHER PLAYER NUMBER -->
       <div class="screen" id="screen-waiting-number">
         <div style="font-size: 48px; margin-bottom: 12px">🔒</div>
         <h2>Number Locked!</h2>
         <p>Waiting for your opponent to pick their number...</p>
       </div>
 
-      <!-- PLAYING -->
       <div class="screen" id="screen-playing">
         <div class="reconnect-banner" id="reconnect-banner"></div>
         <div class="badge" id="turn-badge">Your Turn</div>
@@ -285,7 +279,6 @@
         <div class="history" id="history"></div>
       </div>
 
-      <!-- WIN -->
       <div class="screen" id="screen-win">
         <div style="font-size: 60px; margin-bottom: 12px">🏆</div>
         <h2 id="win-title">You Win!</h2>
@@ -313,7 +306,6 @@
         <button onclick="playAgain()">Play Again</button>
       </div>
 
-      <!-- RECONNECTING -->
       <div class="screen" id="screen-reconnecting">
         <div
           style="
@@ -328,7 +320,6 @@
         <p>Please wait while we restore your connection.</p>
       </div>
 
-      <!-- DISCONNECTED -->
       <div class="screen" id="screen-disconnected">
         <div style="font-size: 60px; margin-bottom: 12px">😞</div>
         <h2>Opponent Left</h2>
@@ -338,11 +329,12 @@
     </div>
 
     <script>
+      // 1. Better Socket configuration
       const socket = io({
         reconnection: true,
-        reconnectionAttempts: 10,
+        reconnectionAttempts: 15,
         reconnectionDelay: 1000,
-        reconnectionDelayMax: 5000,
+        transports: ["websocket", "polling"]
       });
 
       let myName = "";
@@ -354,6 +346,20 @@
       let guessHistory = [];
       let myRange = [1, 100];
 
+      // --- CRITICAL FIX: RECONNECT ON TAB FOCUS ---
+      document.addEventListener("visibilitychange", () => {
+        if (document.visibilityState === "visible") {
+          console.log("Tab focused: checking connection...");
+          if (!socket.connected) {
+            socket.connect();
+          }
+          if (roomCode && myName) {
+            console.log("Attempting to rejoin room:", roomCode);
+            socket.emit("rejoin", { roomCode, playerName: myName });
+          }
+        }
+      });
+
       function showScreen(id) {
         document
           .querySelectorAll(".screen")
@@ -361,14 +367,14 @@
         document.getElementById(id).classList.add("active");
       }
 
-      function showJoin() {
-        showScreen("screen-join");
-      }
-
       function createRoom() {
         myName = document.getElementById("home-name").value.trim();
         if (!myName) return alert("Please enter your name!");
         socket.emit("createRoom", myName);
+      }
+
+      function showJoin() {
+        showScreen("screen-join");
       }
 
       function joinRoom() {
@@ -409,7 +415,6 @@
         if (e.key === "Enter") makeGuess();
       });
 
-      // Reconnection handling
       socket.on("disconnect", () => {
         if (roomCode && myName) {
           showScreen("screen-reconnecting");
@@ -418,25 +423,25 @@
 
       socket.on("reconnect", () => {
         if (roomCode && myName) {
-          setTimeout(() => {
-            socket.emit("rejoin", { roomCode, playerName: myName });
-          }, 500);
+          socket.emit("rejoin", { roomCode, playerName: myName });
         }
       });
 
-      socket.on(
-        "rejoinSuccess",
-        ({ p1, p2, currentTurnIndex, myNumber: num }) => {
-          p1Name = p1;
-          p2Name = p2;
-          if (num !== null) myNumber = num;
-          isMyTurn =
-            (currentTurnIndex === 0 && myName === p1) ||
-            (currentTurnIndex === 1 && myName === p2);
-          updateTurnUI();
-          showScreen("screen-playing");
-        },
-      );
+      socket.on("rejoinSuccess", (data) => {
+        console.log("Rejoined successfully!");
+        p1Name = data.p1;
+        p2Name = data.p2;
+        roomCode = data.roomCode;
+        if (data.myNumber !== null) myNumber = data.myNumber;
+        
+        isMyTurn =
+          (data.currentTurnIndex === 0 && myName === p1Name) ||
+          (data.currentTurnIndex === 1 && myName === p2Name);
+        
+        updateTurnUI();
+        showScreen("screen-playing");
+        document.getElementById("reconnect-banner").style.display = "none";
+      });
 
       socket.on("rejoinFailed", () => {
         showScreen("screen-disconnected");
@@ -445,7 +450,7 @@
       socket.on("opponentDisconnected", (name) => {
         const banner = document.getElementById("reconnect-banner");
         banner.style.display = "block";
-        banner.textContent = `⏳ ${name} disconnected — waiting 30s for them to return...`;
+        banner.textContent = `⏳ ${name} disconnected — waiting for them to return...`;
       });
 
       socket.on("opponentReconnected", () => {
@@ -483,19 +488,12 @@
         const isMe = guesserName === myName;
 
         if (result === "correct") {
-          document.getElementById("win-title").textContent = isMe
-            ? "🏆 You Win!"
-            : "😔 You Lost!";
-          document.getElementById("win-subtitle").textContent =
-            `${guesserName} guessed ${targetName}'s number!`;
-          document.getElementById("p1-label").textContent =
-            data.p1Name || p1Name;
-          document.getElementById("p2-label").textContent =
-            data.p2Name || p2Name;
-          document.getElementById("p1-number").textContent =
-            data.p1Number || "?";
-          document.getElementById("p2-number").textContent =
-            data.p2Number || "?";
+          document.getElementById("win-title").textContent = isMe ? "🏆 You Win!" : "😔 You Lost!";
+          document.getElementById("win-subtitle").textContent = `${guesserName} guessed ${targetName}'s number!`;
+          document.getElementById("p1-label").textContent = data.p1Name || p1Name;
+          document.getElementById("p2-label").textContent = data.p2Name || p2Name;
+          document.getElementById("p1-number").textContent = data.p1Number || "?";
+          document.getElementById("p2-number").textContent = data.p2Number || "?";
           showScreen("screen-win");
           return;
         }
@@ -503,21 +501,17 @@
         if (isMe) {
           if (result === "higher") myRange[0] = Math.max(myRange[0], guess + 1);
           else myRange[1] = Math.min(myRange[1], guess - 1);
-          document.getElementById("range-text").textContent =
-            `Range: ${myRange[0]} – ${myRange[1]}`;
+          document.getElementById("range-text").textContent = `Range: ${myRange[0]} – ${myRange[1]}`;
         }
 
-        guessHistory.unshift({ guesserName, guess, result, targetName, isMe });
+        guessHistory.unshift({ guesserName, guess, result, isMe });
         updateHistory();
 
         const banner = document.getElementById("result-banner");
         banner.style.display = "block";
         if (isMe) {
           banner.className = `result-banner ${result}`;
-          banner.textContent =
-            result === "higher"
-              ? `📈 Go HIGHER! (you guessed ${guess})`
-              : `📉 Go LOWER! (you guessed ${guess})`;
+          banner.textContent = result === "higher" ? `📈 Go HIGHER! (you guessed ${guess})` : `📉 Go LOWER! (you guessed ${guess})`;
         } else {
           banner.className = "result-banner";
           banner.style.background = "rgba(255,255,255,0.05)";
@@ -571,8 +565,7 @@
 
       function updateHistory() {
         const container = document.getElementById("history");
-        container.innerHTML =
-          '<p style="color:rgba(255,255,255,0.3);font-size:11px;letter-spacing:1px;margin-bottom:8px">GUESS HISTORY</p>';
+        container.innerHTML = '<p style="color:rgba(255,255,255,0.3);font-size:11px;letter-spacing:1px;margin-bottom:8px">GUESS HISTORY</p>';
         guessHistory.forEach((h) => {
           const div = document.createElement("div");
           div.className = `history-item ${h.isMe ? "mine" : "theirs"}`;

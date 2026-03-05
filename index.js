@@ -17,7 +17,7 @@ io.on("connection", (socket) => {
     rooms[roomCode] = {
       players: [{ id: socket.id, name: playerName, number: null }],
       currentTurn: 0,
-      ranges: { p1: [1, 100], p2: [1, 100] },
+      ranges: { p1: [1, 200], p2: [1, 200] },
     };
     socket.join(roomCode);
     socket.emit("roomCreated", roomCode);
@@ -40,15 +40,9 @@ io.on("connection", (socket) => {
 
   socket.on("rejoin", ({ roomCode, playerName }) => {
     const room = rooms[roomCode];
-    if (!room) {
-      socket.emit("rejoinFailed");
-      return;
-    }
+    if (!room) { socket.emit("rejoinFailed"); return; }
     const playerIndex = room.players.findIndex((p) => p.name === playerName);
-    if (playerIndex === -1) {
-      socket.emit("rejoinFailed");
-      return;
-    }
+    if (playerIndex === -1) { socket.emit("rejoinFailed"); return; }
     if (disconnectTimers[roomCode + playerName]) {
       clearTimeout(disconnectTimers[roomCode + playerName]);
       delete disconnectTimers[roomCode + playerName];
@@ -89,10 +83,7 @@ io.on("connection", (socket) => {
     if (guess === targetNumber) {
       result = "correct";
       io.to(roomCode).emit("guessResult", {
-        guesserName,
-        targetName,
-        guess,
-        result,
+        guesserName, targetName, guess, result,
         p1Number: room.players[0].number,
         p2Number: room.players[1].number,
         p1Name: room.players[0].name,
@@ -106,10 +97,7 @@ io.on("connection", (socket) => {
     }
     room.currentTurn = targetIndex;
     io.to(roomCode).emit("guessResult", {
-      guesserName,
-      targetName,
-      guess,
-      result,
+      guesserName, targetName, guess, result,
       nextTurn: room.players[targetIndex].name,
     });
   });
@@ -119,7 +107,7 @@ io.on("connection", (socket) => {
     if (!room) return;
     room.players.forEach((p) => (p.number = null));
     room.currentTurn = 0;
-    room.ranges = { p1: [1, 100], p2: [1, 100] };
+    room.ranges = { p1: [1, 200], p2: [1, 200] };
     io.to(roomCode).emit("restartGame");
   });
 
